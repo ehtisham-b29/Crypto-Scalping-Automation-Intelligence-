@@ -70,10 +70,14 @@ def analyze(candles: pd.DataFrame, swing_n: int = 3) -> MarketStructure:
         h = highs[i]
         l = lows[i]
 
-        is_sh = all(h >= highs[i - j] for j in range(1, swing_n + 1)) and \
-                all(h >= highs[i + j] for j in range(1, swing_n + 1))
-        is_sl = all(l <= lows[i - j]  for j in range(1, swing_n + 1)) and \
-                all(l <= lows[i + j]  for j in range(1, swing_n + 1))
+        # Guard against NaN values in real market data
+        if h != h or l != l:   # NaN check (NaN != NaN is True)
+            continue
+
+        is_sh = all(bool(h >= highs[i - j]) for j in range(1, swing_n + 1)) and \
+                all(bool(h >= highs[i + j]) for j in range(1, swing_n + 1))
+        is_sl = all(bool(l <= lows[i - j])  for j in range(1, swing_n + 1)) and \
+                all(bool(l <= lows[i + j])  for j in range(1, swing_n + 1))
 
         if is_sh:
             # Avoid duplicate adjacent swings (must differ by at least 0.01%)

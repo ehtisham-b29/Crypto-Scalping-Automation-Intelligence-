@@ -58,6 +58,9 @@ def find_order_blocks(
     bearish_obs: list[OrderBlock] = []
 
     for i in range(start + 3, n - 1):
+        # Skip candles with NaN OHLCV (can occur with real exchange data)
+        if closes[i] != closes[i] or opens[i] != opens[i]:
+            continue
 
         # ── Bullish OB: bearish candle before bullish impulse ─────────────────
         if closes[i] > opens[i]:                          # current = bullish

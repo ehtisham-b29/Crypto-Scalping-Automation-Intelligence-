@@ -139,6 +139,18 @@ class ScalpingBot:
     async def _evaluate_symbol(self, state) -> None:
         """Full SMC evaluation pipeline for one symbol."""
         symbol = state.symbol
+        try:
+            await self._evaluate_symbol_inner(state)
+        except Exception:
+            import traceback
+            logger.error(
+                f"{symbol} | _evaluate_symbol crashed — full traceback:\n"
+                + traceback.format_exc()
+            )
+
+    async def _evaluate_symbol_inner(self, state) -> None:
+        """Inner evaluation — exceptions caught by _evaluate_symbol wrapper."""
+        symbol = state.symbol
 
         # 1. Standard indicators (ATR, RSI, EMA, BB etc — used by SMC engine)
         ind = indicators.calculate(state.candles)

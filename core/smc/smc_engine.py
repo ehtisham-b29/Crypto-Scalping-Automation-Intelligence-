@@ -46,16 +46,23 @@ async def analyze(
 
     Async wrapper so main.py can `await` this identically to the old engines.
     All computation is synchronous — zero network calls.
+    Never raises: any internal exception is caught, logged, and returns WAIT.
     """
-    return _smc_decide(
-        symbol=symbol,
-        candles=candles_5m,
-        ind=indicators,
-        micro=micro,
-        port=portfolio_state,
-        fear_greed=fear_greed,
-        funding_rate=funding_rate,
-    )
+    try:
+        return _smc_decide(
+            symbol=symbol,
+            candles=candles_5m,
+            ind=indicators,
+            micro=micro,
+            port=portfolio_state,
+            fear_greed=fear_greed,
+            funding_rate=funding_rate,
+        )
+    except Exception:
+        import traceback as _tb
+        err = _tb.format_exc()
+        logger.error(f"[SMC] {symbol} internal error — returning WAIT:\n{err}")
+        return _wait(f"Internal SMC error (see log): {err.splitlines()[-1]}")
 
 
 # ── Core decision logic ───────────────────────────────────────────────────────
