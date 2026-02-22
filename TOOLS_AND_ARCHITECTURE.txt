@@ -1,0 +1,918 @@
+================================================================================
+         AI SCALPING BOT — COMPLETE TOOLS & ARCHITECTURE REFERENCE
+================================================================================
+Exchange: MEXC Futures (Perpetual Swaps)
+Target:   $500 USDT profit via accumulated small-gain trades
+Mode:     Paper Trading → Live Trading
+Date:     2026-02-21
+================================================================================
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 1 — TECHNICAL ANALYSIS TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+── 1.1 TREND INDICATORS ────────────────────────────────────────────────────────
+
+  Tool                  What it does                                  Priority
+  ──────────────────    ──────────────────────────────────────────    ──────────
+  EMA 9 / EMA 21        Fast/slow EMA crossover — primary trend       MUST-HAVE
+                        direction per candle
+  EMA 50                Medium-term trend filter for HTF bias          MUST-HAVE
+  VWAP (daily reset)    Volume-weighted avg price — institutional      MUST-HAVE
+                        benchmark; above/below = session bias
+  SuperTrend            ATR-based trailing trend line — clean          HIGH
+                        signal with built-in stop level
+  Ichimoku Cloud        Multi-component trend system — cloud           MEDIUM
+                        position = macro bias on 5-min chart
+  Parabolic SAR         Dot above/below price — trailing stop          MEDIUM
+                        placement on trending moves
+  HMA (Hull MA)         Reduced-lag moving average — faster            MEDIUM
+                        signal than EMA for 1-min charts
+  SMA 200               Long-term average — session-level              LOW
+                        bull/bear context filter
+
+── 1.2 MOMENTUM INDICATORS ─────────────────────────────────────────────────────
+
+  Tool                  What it does                                  Priority
+  ──────────────────    ──────────────────────────────────────────    ──────────
+  RSI (14)              0-100 oscillator — oversold (<35) /           MUST-HAVE
+                        overbought (>65) entry filter
+  MACD (12, 26, 9)      Trend + momentum — histogram flip =           MUST-HAVE
+                        momentum shift signal
+  Stochastic (14,3,3)   Fast overbought/oversold — confirms           MUST-HAVE
+                        RSI at extremes
+  Williams %R           Inverted RSI-like oscillator — second         HIGH
+                        confirmation of reversal zones
+  MFI (14)              Money Flow Index = RSI weighted by            HIGH
+                        volume — more reliable than RSI alone
+  CCI (20)              Commodity Channel Index — detects             MEDIUM
+                        breakouts from normal price range
+  ROC                   Rate of Change — speed of price move,         MEDIUM
+                        detect momentum acceleration
+  Ultimate Oscillator   Multi-timeframe momentum — reduces            LOW
+                        false signals vs single-period oscillators
+
+── 1.3 VOLATILITY INDICATORS ───────────────────────────────────────────────────
+
+  Tool                  What it does                                  Priority
+  ──────────────────    ──────────────────────────────────────────    ──────────
+  ATR (14)              Average True Range — stop-loss sizing +       MUST-HAVE
+                        volatility filter (skip if > 2x average)
+  Bollinger Bands       Volatility envelope (20 period, 2.0 SD)       MUST-HAVE
+  (20, 2.0)             Price at bands = reversal zone
+  BB Width / Squeeze    Band contraction detector — predicts          MUST-HAVE
+                        volatility expansion before breakout
+  Keltner Channels      ATR-based envelope — combined with BB         HIGH
+                        squeeze = powerful breakout signal
+  Donchian Channels     Highest high / lowest low (20 period)         MEDIUM
+  (20)                  Breakout confirmation above/below channel
+  Historical            Realized price volatility % — compare        MEDIUM
+  Volatility (HV)       to IV to find premium opportunities
+
+── 1.4 VOLUME INDICATORS ───────────────────────────────────────────────────────
+
+  Tool                  What it does                                  Priority
+  ──────────────────    ──────────────────────────────────────────    ──────────
+  Volume vs 20-avg      Relative volume ratio — spike confirms        MUST-HAVE
+                        move is genuine (need >= 1.2x)
+  VWAP Bands            1-sigma and 2-sigma bands around VWAP         MUST-HAVE
+  (1σ, 2σ)              2σ extreme = highest-probability reversion
+  OBV                   On Balance Volume — cumulative direction       HIGH
+  (On Balance Vol)      Divergence with price = smart money signal
+  CMF                   Chaikin Money Flow (0-21 period)              HIGH
+  (Chaikin MF)          Sustained positive = institutional accum.
+  Volume Profile        Volume traded at each price level             HIGH
+  / VPVR                Point of Control (POC) = strongest S/R
+  Force Index           Price × volume momentum — large sudden        MEDIUM
+                        values = institutional activity
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 2 — ORDER BOOK & MARKET MICROSTRUCTURE TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  L2 Order Book           Live bid/ask at each price level            MUST-HAVE
+  (top 10-20 levels)      Foundation of OBI calculation
+  OBI                     Order Book Imbalance formula:               MUST-HAVE
+  (Order Book Imbalance)  (bid_vol - ask_vol) / total_vol → [-1,+1]
+                          >+0.40 = buy pressure / <-0.40 = sell
+  Bid-Ask Spread (bps)    Best ask minus best bid in basis points     MUST-HAVE
+                          Entry gate — skip if spread > 5 bps
+  Order Book Depth        Total liquidity within 0.3% of mid price   MUST-HAVE
+                          Thin book = high slippage risk, skip trade
+  Order Book Walls        Unusually large limit orders at a level     HIGH
+                          Act as magnets/barriers — real-time S/R
+  Iceberg Order           Orders that replenish repeatedly at same    HIGH
+  Detection               price — hidden large order = strong S/R
+  Spoofing Detection      Large orders that appear then disappear     HIGH
+                          before fill — false signal filter
+  Liquidity Heatmap       Historical order book displayed as heat     MEDIUM
+                          map — visual cluster of liquidity zones
+  Quote Stuffing          Abnormal rate of order placement            MEDIUM
+  Detection               Market manipulation flag — avoid entry
+  Mark Price vs           Exchange price vs spot aggregate price      HIGH
+  Index Price             Divergence > 0.1% = funding pressure
+  L3 Order Book           Individual order-level tracking             LOW
+                          Institutional activity (latency-heavy)
+
+  OBI Formula:
+  ─────────────
+  obi = (sum of top-N bid volumes - sum of top-N ask volumes)
+        ÷ (sum of top-N bid volumes + sum of top-N ask volumes)
+
+  Thresholds:
+    obi >= +0.40 → bullish signal (+1 score)
+    obi <= -0.40 → bearish signal (-1 score)
+    -0.40 < obi < +0.40 → neutral (0 score)
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 3 — TRADE FLOW & VOLUME ANALYSIS TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  CVD                     Cumulative Volume Delta                      MUST-HAVE
+  (Cum. Volume Delta)     Running total of (buy vol - sell vol)
+                          Rising = net buying; falling = net selling
+  Aggressor Ratio         % of trades that are aggressive buys        MUST-HAVE
+                          vs sells — >60% buys = momentum signal
+  Delta Divergence        Price makes new high but CVD does not       MUST-HAVE
+                          Exhaustion signal — reversal likely
+  Tape / Time & Sales     Every executed trade: price, size, side     HIGH
+                          Real-time order flow reading
+  Large Trade Alerts      Trades above threshold (e.g. > $50K)        HIGH
+                          Whale activity — sudden momentum catalyst
+  Footprint / Cluster     Volume at each price tick inside a candle   HIGH
+  Charts                  Shows exactly where buyers/sellers traded
+  TWAP/VWAP Slippage      Measures execution quality vs benchmark     MEDIUM
+                          Used for post-trade bot optimization
+  Tick Charts             Chart based on number of trades not time    MEDIUM
+                          Removes low-activity periods — cleaner
+
+  CVD Formula:
+  ─────────────
+  For each trade in the window:
+    if trade.side == "buy":   cvd += trade.amount   (aggressive buy = hit ask)
+    if trade.side == "sell":  cvd -= trade.amount   (aggressive sell = hit bid)
+
+  CVD Trend:
+    Compare first-half delta vs second-half delta of lookback window
+    second_half > first_half * 1.10 → "rising"
+    second_half < first_half * 0.90 → "falling"
+    else                             → "flat"
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 4 — CRYPTO DERIVATIVES DATA (CRITICAL FOR FUTURES)
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does              Thresholds          Priority
+  ──────────────────────  ──────────────────────    ────────────────    ──────────
+  Funding Rate            Cost to hold perpetual    >+0.03%/8h =        MUST-HAVE
+                          futures position          avoid new longs
+                                                    <-0.01%/8h =
+                                                    avoid new shorts
+  Open Interest (OI)      Total open contracts      Rising OI +         MUST-HAVE
+                          in the market             rising price =
+                                                    healthy trend
+  OI Change Rate          How fast OI is growing    Sudden spike =      MUST-HAVE
+                          or shrinking              new money entering
+  Long/Short Ratio        Ratio of longs to         >70% longs =        MUST-HAVE
+                          shorts across traders     crowded, short bias
+  Liquidation Levels      Price where leveraged     Price hunted        MUST-HAVE
+                          positions get closed      toward clusters
+  Liquidation Cascade     Large OI near             Avoid trading       HIGH
+  Risk                    liquidation price         into cascade zones
+  Liquidation Heatmap     Historical + live          Magnet map —       HIGH
+                          liquidation density        price gravitates
+                          by price level             toward dense zones
+  Perpetual vs Spot       Futures price minus        Positive =         HIGH
+  Premium                 spot price                 bullish sentiment
+  Basis Rate              Futures premium            High basis =       HIGH
+                          annualized                 institutions bull
+  Options Put/Call        Puts vs calls volume       >1.0 = bearish     MEDIUM
+  Ratio                   from Deribit               <0.5 = bullish
+  Options Max Pain        Price where most           Price gravitates   MEDIUM
+                          options expire worthless   to max pain
+  GEX                     Market maker hedging       Negative GEX =     MEDIUM
+  (Gamma Exposure)        pressure from options      high volatility
+  DVOL                    Deribit BTC/ETH            IV spike =         MEDIUM
+  (Implied Vol Index)     implied volatility index   avoid scalping
+  ADL Risk                Auto-Deleveraging rank     High rank =        HIGH
+  (Auto-Deleveraging)     Your pos. may be closed    exit early
+  Insurance Fund          Exchange buffer against    Declining =        LOW
+                          socialized losses          exchange risk
+
+  Funding Rate Trading Rules:
+  ────────────────────────────
+    Funding > +0.03% per 8h  → Skip new long entries (over-leveraged longs)
+    Funding < -0.01% per 8h  → Skip new short entries (over-leveraged shorts)
+    Funding at extremes       → Consider contrarian trade in opposite direction
+    MEXC funding settles every 8 hours (00:00, 08:00, 16:00 UTC)
+
+  Open Interest Rules:
+  ─────────────────────
+    Rising OI + Rising Price   → Healthy uptrend, momentum longs valid
+    Rising OI + Falling Price  → Bears in control, momentum shorts valid
+    Falling OI + Any direction → Short covering / liquidations — avoid new entries
+    OI spike > 5% in 1 hour   → New money entering fast — trade the direction
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 5 — ON-CHAIN DATA TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  Exchange Net Flow       Coins moving into/out of exchanges          HIGH
+                          Large inflow = sell pressure (30-min lag)
+  Exchange Inflow         Whales depositing to exchange               HIGH
+  (large txns)            Precedes selling — bearish signal 1h+
+  Exchange Outflow        Coins leaving exchanges                     HIGH
+                          Holders taking custody = bullish
+  Whale Alert             On-chain txns > $1M — immediate price       HIGH
+                          impact on small caps, less on BTC/ETH
+  Stablecoin Flows        USDT/USDC moving to/from exchanges          HIGH
+                          Inflow = dry powder buying = bullish
+  Stablecoin Market Cap   Total USDT+USDC+BUSD in circulation         MEDIUM
+                          Rising = buying power accumulating
+  NUPL                    Net Unrealized Profit/Loss                  MEDIUM
+  (Net Unreal. P&L)       <0 = capitulation (buy zone)
+                          >0.75 = euphoria (take profit)
+  SOPR                    Spent Output Profit Ratio                   MEDIUM
+                          <1 = selling at loss = capitulation
+                          >1 = selling at profit = resistance
+  Active Addresses        Unique addresses transacting per day        LOW
+                          Spike = network activity surge coming
+  Miner Flow              Bitcoin sent by miners to exchanges         LOW
+                          Large miner selling = short-term pressure
+  DeFi TVL Change         Total value locked in DeFi protocols        LOW
+                          Drop = risk-off; rise = confidence
+  Hash Rate               Bitcoin mining power                        IGNORE
+                          Long-term metric, not scalping relevant
+
+  Scalping Relevance Note:
+  ─────────────────────────
+  On-chain data has 15-60 minute lag. Use as SESSION-LEVEL filter only.
+  Never use on-chain data for individual 1-minute trade decisions.
+  Best use: session bias (bullish/bearish) before the bot starts each day.
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 6 — SENTIMENT & NEWS TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                  API / Source    Priority
+  ──────────────────────  ────────────────────────────  ──────────────  ──────────
+  Fear & Greed Index      0-100 composite sentiment     alternative.me  MUST-HAVE
+                          score for crypto overall      /fng/ (FREE)
+  CFGI.io                 Fear & Greed for 50+          cfgi.io         HIGH
+                          individual tokens             (freemium)
+  CryptoPanic             Aggregated crypto news        cryptopanic.com HIGH
+                          with bullish/bearish tags     API (free tier)
+  LunarCrush              Social volume, engagement,    lunarcrush.com  HIGH
+                          sentiment per coin            (freemium)
+  Santiment               Social trends + on-chain      santiment.net   MEDIUM
+                          combined signals              ($50-200/month)
+  Whale Alert             Real-time large on-chain      API + Twitter   HIGH
+                          transaction alerts            feed
+  Economic Calendar       Fed meetings, CPI, NFP,       investing.com   MUST-HAVE
+                          PCE, FOMC release dates       tradingeconom.
+  Google Trends           Search volume for             pytrends        LOW
+                          "bitcoin" keywords            (free Python)
+  Token Unlock            Large unlocks = incoming      token.unlocks   MEDIUM
+  Schedule                sell pressure event           .app
+  Exchange                Listings, delistings,         RSS feeds /     HIGH
+  Announcements           maintenance windows           Twitter monitor
+  Regulatory News         SEC rulings, govt bans,       News API        HIGH
+                          approvals                     filtering
+
+  Fear & Greed Interpretation:
+  ──────────────────────────────
+    0-24   = Extreme Fear     → Strong BUY BIAS (mean reversion)
+    25-44  = Fear             → Moderate buy bias
+    45-55  = Neutral          → No macro bias
+    56-74  = Greed            → Moderate sell bias
+    75-100 = Extreme Greed    → Strong SELL BIAS (mean reversion)
+
+  Economic Calendar Rules:
+  ─────────────────────────
+    30 min BEFORE major event (CPI, Fed, NFP) → STOP all new entries
+    30 min AFTER major event                  → Resume only if ATR normalizes
+    Major events: FOMC, CPI, PCE, NFP, US GDP
+    ATR filter catches this automatically (skip if ATR > 2x average)
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 7 — MARKET STRUCTURE TOOLS (SMART MONEY CONCEPTS)
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  Support & Resistance    Historical price levels where price         MUST-HAVE
+  (Horizontal)            reversed — entry zones, targets, stops
+  Previous Day High/Low   Prior day's range extremes                  MUST-HAVE
+  (PDH / PDL)             Key breakout/rejection levels each session
+  HTF Alignment           5-min/15-min trend confirming 1-min entry   MUST-HAVE
+                          Never trade against higher timeframe trend
+  Market Structure        Price breaks previous swing high/low        HIGH
+  Break (BOS)             Confirms trend direction change
+  Change of Character     First opposing structure break after        HIGH
+  (CHoCH)                 trend — early reversal signal
+  Fair Value Gaps         3-candle imbalance gaps in price action     HIGH
+  (FVG)                   Price fills FVG before continuing
+  Order Blocks (OB)       Last opposing candle before strong impulse  HIGH
+                          Institutional entry zones — high prob.
+  Liquidity Pools         Equal highs / equal lows                    HIGH
+                          (engineered liquidity) — price sweeps
+                          these before reversing
+  Volume Profile          Volume at each price level for session      HIGH
+  (VPVR)                  Point of Control = strongest S/R
+  Value Area              70% of volume traded in this range          MEDIUM
+  High/Low (VAH/VAL)      Outside VA = high-probability return
+  Session High/Low        Highest/lowest price of each session        HIGH
+                          Asia / London / New York
+  Pivot Points            Mathematically derived daily S/R levels     MEDIUM
+  (Classic/Camarilla)     Quick reference used by many traders
+
+  Python Library for SMC:
+  ────────────────────────
+    pip install smartmoneyconcepts
+    GitHub: joshyattridge/smart-money-concepts
+    Detects: BOS, CHoCH, FVG, Order Blocks, Liquidity Pools
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 8 — MACRO & CROSS-MARKET TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  Bitcoin Dominance       BTC's % share of total crypto market cap    HIGH
+  (BTC.D)                 Rising = altcoins weak; falling = altseason
+  Altcoin Season Index    75%+ of top 50 alts outperforming BTC       HIGH
+                          Determines whether to trade BTC or alts
+  DXY (USD Index)         Strength of the US Dollar                   HIGH
+                          BTC and DXY inversely correlated (~-0.7)
+  S&P 500 / NASDAQ        US equity market performance                MEDIUM
+                          High correlation in risk-on/risk-off
+  Gold (XAU/USD)          Safe haven asset                            LOW
+                          Positive correlation in macro fear events
+  10-Year Treasury        Risk-free rate benchmark                    MEDIUM
+  Yield                   Rising yields = risk-off = crypto pressure
+  CME Bitcoin             Premium of CME futures vs spot              MEDIUM
+  Futures Basis           Negative basis = institutions hedging
+  BTC ETF Flows           Daily inflow/outflow from spot ETFs         HIGH
+                          (BlackRock IBIT, Fidelity FBTC, etc.)
+                          Large outflow = institutional selling
+  Stablecoin              USDT+USDC % of total market cap             MEDIUM
+  Dominance               Rising = capital fleeing to safety
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 9 — EXCHANGE-SPECIFIC MEXC TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                  Method          Priority
+  ──────────────────────  ────────────────────────────  ──────────────  ──────────
+  MEXC OHLCV Stream       Real-time 1-min candles       ccxt.pro WS     MUST-HAVE
+  MEXC L2 Order Book      Live bid/ask levels           ccxt.pro WS     MUST-HAVE
+  MEXC Trade Tick         Every executed trade          ccxt.pro WS     MUST-HAVE
+  MEXC Funding Rate       Current 8h rate per pair      ccxt REST       MUST-HAVE
+  MEXC Mark Price         Fair price for liquidation    WS stream       HIGH
+  MEXC Open Interest      Total open contracts          ccxt REST       MUST-HAVE
+  MEXC Long/Short Ratio   Retail positioning per pair   MEXC API        HIGH
+  MEXC Liquidation        Real-time forced liquidations WS / REST poll  HIGH
+  Stream
+  pymexc                  Native Python MEXC SDK        pip install     OPTIONAL
+                          Alternative to ccxt           pymexc
+
+  MEXC Fees (Futures):
+  ─────────────────────
+    Maker fee:          0.000%  (limit orders — free)
+    Taker fee:          0.020%  (market orders)
+    With MX token:      0.016%  (hold 500+ MX for 20% discount)
+    Round-trip (taker): 0.040%
+    Breakeven move:     0.040%
+    Minimum target:     0.200%  (5x the fee = safe margin)
+
+  MEXC API Rate Limits:
+  ──────────────────────
+    Order placement:    5 orders/second
+    Batch orders:       20 per batch, 2 batches/second
+    General endpoints:  500 requests per 10 seconds
+    WebSocket messages: 100 messages/second max
+    WebSocket channels: 30 channels per connection max
+    Connection lifespan: 24 hours (reconnect daily)
+    Keepalive:          Send ping every 10-20 seconds
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 10 — RISK MANAGEMENT TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  ATR Position Sizing     Size position so max loss = 1.5% capital    MUST-HAVE
+                          qty = risk_usd / |entry - stop_loss|
+  Kelly Criterion         Optimal bet size based on win rate + R:R    HIGH
+  (fractional 25%)        Use 25% of full Kelly for safety
+  Daily Loss Limit        Halt after 3% daily drawdown                MUST-HAVE
+  Consecutive Loss        Halt after 5 losses in a row                MUST-HAVE
+  Counter
+  Max Drawdown Tracker    Max peak-to-trough equity decline           MUST-HAVE
+  Profit Factor           Gross wins / gross losses                   MUST-HAVE
+                          Target: > 1.5
+  Sharpe Ratio            Risk-adjusted return metric                 HIGH
+                          Target: > 1.5 weekly
+  Sortino Ratio           Like Sharpe but only penalizes              MEDIUM
+                          downside volatility
+  VaR                     Max expected loss at 95% confidence         MEDIUM
+  (Value at Risk)
+  Pair Correlation        Correlation between BTC, ETH, SOL, BNB      HIGH
+  Matrix                  Avoid doubling up on correlated trades
+
+  Position Sizing Formula:
+  ─────────────────────────
+    risk_usd       = capital × 0.015         (1.5% of capital at risk)
+    price_risk     = |entry_price - stop_loss_price|
+    quantity       = risk_usd / price_risk
+    position_usd   = quantity × entry_price
+    leverage_used  = position_usd / capital
+    max_notional   = capital × leverage      (cap at this)
+
+  Kelly Criterion Formula:
+  ─────────────────────────
+    kelly_pct = (W × R - L) / R
+    where:
+      W = win rate (e.g. 0.65)
+      L = 1 - W   (e.g. 0.35)
+      R = avg win / avg loss (e.g. 1.5)
+    Example: (0.65 × 1.5 - 0.35) / 1.5 = 0.417 = 41.7% (use 25% = 10.4%)
+
+  Circuit Breakers (auto-halt conditions):
+  ──────────────────────────────────────────
+    1. Daily loss    >= 3% of starting capital
+    2. Consecutive   >= 5 losses in a row
+    3. Account drops <= 70% of starting capital
+    4. ATR elevated  >= 2× its 20-period average (news event)
+    5. Spread        >  5 basis points
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 11 — INFRASTRUCTURE & SPEED TOOLS
+════════════════════════════════════════════════════════════════════════════════
+
+  Tool                    What it does                                Priority
+  ──────────────────────  ──────────────────────────────────────────  ──────────
+  VPS near MEXC servers   Minimize WebSocket latency                  MUST-HAVE
+                          MEXC servers: HK / Singapore
+                          Recommended: AWS ap-east-1 or ap-southeast-1
+  WebSocket over REST     Real-time vs polling                        MUST-HAVE
+                          Always use WebSocket for all live data
+  asyncio                 Non-blocking concurrent execution           MUST-HAVE
+                          Run all streams in parallel
+  orjson                  Fast JSON parsing (3-5x faster)             HIGH
+                          Critical for high-frequency WS messages
+  Redis                   In-memory state cache                       HIGH
+                          Store live indicator values between candles
+  Candle Seeding          Warm up indicators before trading           MUST-HAVE
+  on Startup              Fetch 100 candles via REST on launch
+
+  Latency Targets:
+  ─────────────────
+    WebSocket message to signal:   < 10ms
+    Signal to AI API call:         < 50ms
+    AI response to order:          < 200ms
+    Total tick-to-trade:           < 500ms
+    VPS to MEXC round-trip ping:   < 20ms (Singapore VPS)
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 12 — PYTHON LIBRARIES (COMPLETE LIST)
+════════════════════════════════════════════════════════════════════════════════
+
+  Library                 Purpose                               Install
+  ──────────────────────  ────────────────────────────────────  ──────────────────────────
+  ccxt[pro]               Exchange WS + REST (MEXC)             pip install ccxt[pro]
+  pandas-ta               130+ technical indicators             pip install pandas-ta
+  ta-lib                  200 indicators (C, 4x faster)         pip install ta-lib
+  anthropic               Claude AI SDK                         pip install anthropic
+  pandas                  Candle DataFrame management           pip install pandas
+  numpy                   Numerical operations                  pip install numpy
+  asyncio                 Async event loop (built-in)           built-in Python 3.11+
+  aiohttp                 Async HTTP (Fear & Greed API)         pip install aiohttp
+  sqlalchemy              Trade log ORM                         pip install sqlalchemy
+  python-dotenv           .env configuration loader             pip install python-dotenv
+  loguru                  Structured rotating log               pip install loguru
+  orjson                  Fast JSON parsing                     pip install orjson
+  redis                   In-memory state cache                 pip install redis
+  pymexc                  Native MEXC Python SDK                pip install pymexc
+  smartmoneyconcepts      BOS, CHoCH, FVG, Order Blocks         pip install smartmoneyconcepts
+  yfinance                DXY, S&P500, Gold correlation         pip install yfinance
+  pytrends                Google Trends data                    pip install pytrends
+  vectorbt                Backtesting framework                 pip install vectorbt
+  requests                HTTP calls (sync)                     pip install requests
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 13 — FREE & PAID DATA APIs
+════════════════════════════════════════════════════════════════════════════════
+
+  API                     Data provided               Cost      URL
+  ──────────────────────  ──────────────────────────  ────────  ──────────────────────────
+  Alternative.me FNG      Fear & Greed Index          FREE      api.alternative.me/fng/
+  CFGI.io                 Token-level Fear & Greed    Freemium  cfgi.io
+  CryptoPanic             News sentiment              Free tier cryptopanic.com/api/v1/
+  CoinGlass               OI, L/S ratio,              Freemium  coinglass.com/CryptoApi
+                          Liquidation heatmap
+  Coinalyze               Futures data aggregated     Freemium  coinalyze.net
+  MEXC REST API           All MEXC market data        FREE      mexc.com/api-docs
+  Deribit API             Options data, DVOL, GEX     FREE      deribit.com/api/v2
+  Whale Alert             On-chain large txns         Freemium  docs.whale-alert.io
+  CryptoQuant             On-chain analytics          Paid      cryptoquant.com
+  Glassnode               On-chain metrics            Paid      glassnode.com
+  Santiment               Social + on-chain           Paid      santiment.net
+  LunarCrush              Social metrics              Freemium  lunarcrush.com/developers
+  GammaFlip               BTC Gamma Exposure (GEX)    FREE      gammaflip.io
+  CoinMarketCap           BTC dominance, market cap   Free tier coinmarketcap.com/api
+  Alternative.me          Altcoin season index        FREE      alternative.me
+  Investing.com           Economic calendar           FREE      (scrape/RSS)
+  token.unlocks.app       Token unlock schedules      FREE      token.unlocks.app
+  SoSoValue               BTC ETF flows               FREE      sosovalue.com
+  yfinance (Python)       DXY, S&P500, Gold, bonds    FREE      pip install yfinance
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 14 — THE 7-SIGNAL CONFLUENCE SCORING SYSTEM
+════════════════════════════════════════════════════════════════════════════════
+
+  Each signal scores +1 (bullish), -1 (bearish), or 0 (neutral).
+  Total score range: -7 to +7.
+  Trade only when |score| >= 4.
+
+  Signal    Indicator           Bullish (+1)              Bearish (-1)
+  ────────  ──────────────────  ────────────────────────  ────────────────────────
+  1         EMA trend (9/21)    EMA9 > EMA21              EMA9 < EMA21
+  2         RSI (14)            RSI <= 35 (oversold)      RSI >= 65 (overbought)
+  3         Bollinger Band      Price at lower band       Price at upper band
+  4         VWAP deviation      Price < VWAP by 0.10%+    Price > VWAP by 0.10%+
+  5         OBI                 OBI >= +0.40              OBI <= -0.40
+  6         CVD trend           Trend = "rising"          Trend = "falling"
+  7         Volume              Vol >= 1.2x 20-avg        Vol >= 1.2x 20-avg
+                                AND price < VWAP          AND price > VWAP
+
+  Decision Logic:
+  ────────────────
+    Score >= +4  →  LONG  bias  →  call Claude AI
+    Score <= -4  →  SHORT bias  →  call Claude AI
+    -4 < score < +4  →  NEUTRAL  →  skip (no AI call)
+
+  Additional Hard Gates (must ALL pass before calling AI):
+  ──────────────────────────────────────────────────────────
+    spread_bps     <= 5.0      (not too wide to enter)
+    atr_elevated   == False    (not in news event)
+    open_positions < 2         (not at max capacity)
+    daily_trades   < 30        (not overtraded today)
+    halted         == False    (circuit breakers clear)
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 15 — AI DECISION ENGINE (CLAUDE)
+════════════════════════════════════════════════════════════════════════════════
+
+  Model:           claude-sonnet-4-6
+  SDK:             anthropic Python SDK
+  Method:          tool_use (guarantees structured JSON response)
+  Max tokens:      1024
+  Cost per call:   ~$0.003 (input) + ~$0.015 (output) = ~$0.018 per trade eval
+
+  Data sent to Claude per evaluation (25+ data points):
+  ───────────────────────────────────────────────────────
+    Price data:       current price, VWAP, VWAP deviation
+    Indicators:       RSI, EMA9, EMA21, BB upper/mid/lower/width
+                      MACD, MACD signal, MACD histogram
+                      ATR, ATR avg, ATR elevated flag
+                      Stochastic K/D, Volume ratio
+    Microstructure:   OBI score, spread bps, CVD, CVD trend,
+                      buy volume, sell volume
+    Confluence:       score (0-7), direction, signal breakdown
+    Derivatives:      funding rate, OI change, long/short ratio
+    Macro:            Fear & Greed value and label
+    Account state:    capital, daily P&L, total P&L vs target,
+                      open positions, daily trades, consecutive
+                      losses, daily loss, max risk per trade
+
+  Claude Response Schema (enforced via tool_use):
+  ─────────────────────────────────────────────────
+    action                   BUY | SELL | WAIT
+    confidence               0-100 (below 65 → overridden to WAIT)
+    confluence_score         0-7
+    entry_price              float
+    stop_loss                float
+    take_profit              float
+    stop_loss_pct            % distance from entry
+    take_profit_pct          % distance from entry
+    estimated_net_profit_pct % after 0.04% round-trip fee
+    reasoning:
+      bullish_factors        list of strings
+      bearish_factors        list of strings
+      key_risk               string
+    risk_assessment          LOW | MEDIUM | HIGH | EXTREME
+    hold_duration_estimate   e.g. "2-5 minutes"
+    position_size_pct        0.5 to 2.0
+
+  Hard Gates Applied After AI Response:
+  ───────────────────────────────────────
+    confidence < 65        → override action to WAIT
+    risk_assessment=EXTREME → override action to WAIT
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 16 — FULL ARCHITECTURE OVERVIEW
+════════════════════════════════════════════════════════════════════════════════
+
+  File Structure:
+  ────────────────
+    D:/scalping-bot/
+    ├── .env                     Configuration (API keys, capital, leverage)
+    ├── .env.example             Template reference
+    ├── config.py                All settings — loaded from .env
+    ├── requirements.txt         Python dependencies
+    ├── main.py                  Entry point — async orchestrator
+    ├── TOOLS_AND_ARCHITECTURE.txt  This file
+    ├── data/
+    │   └── trades.db            SQLite trade history database
+    ├── logs/
+    │   └── bot.log              Rotating log file (10MB, 7 days)
+    └── core/
+        ├── __init__.py
+        ├── data_feed.py         MEXC WebSocket streams
+        ├── indicators.py        Technical indicators (pandas-ta)
+        ├── microstructure.py    OBI, CVD, spread
+        ├── confluence.py        7-signal scoring system
+        ├── ai_engine.py         Claude AI integration
+        ├── executor.py          Order execution (paper + live)
+        ├── risk_manager.py      Circuit breakers, position sizing
+        ├── portfolio.py         P&L tracking, fee tracking, SQLite
+        └── external.py          Fear & Greed + funding rate polling
+
+  5-Layer Architecture:
+  ──────────────────────
+
+  LAYER 1 — DATA INGESTION (core/data_feed.py)
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  3 concurrent WebSocket streams per symbol via ccxt.pro:         │
+  │  [OHLCV stream]  [Order Book L2 stream]  [Trade tick stream]     │
+  │  → All stored in MarketState object per symbol                   │
+  │  + REST seed on startup: 100 historical candles per pair         │
+  └──────────────────────────────────────────────────────────────────┘
+                              ↓
+  LAYER 2 — SIGNAL GENERATION
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  core/indicators.py                                              │
+  │    RSI, EMA9/21, Bollinger Bands, MACD, ATR, VWAP, Stochastic  │
+  │    Volume ratio, ATR elevation flag                              │
+  │                                                                  │
+  │  core/microstructure.py                                          │
+  │    OBI (Order Book Imbalance), CVD (Cumulative Volume Delta)     │
+  │    Bid-ask spread in basis points, mid price                     │
+  │                                                                  │
+  │  core/external.py                                                │
+  │    Fear & Greed Index (polled every 5 min)                       │
+  │    Funding Rate per symbol (polled every 5 min)                  │
+  └──────────────────────────────────────────────────────────────────┘
+                              ↓
+  LAYER 3 — AI DECISION ENGINE
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  core/confluence.py                                              │
+  │    Scores all 7 signals → total [-7 to +7]                       │
+  │    If |score| < 4 → SKIP (no AI call, saves API cost)            │
+  │                                                                  │
+  │  core/ai_engine.py                                               │
+  │    Builds context from all 25+ data points                       │
+  │    Calls Claude claude-sonnet-4-6 via tool_use                        │
+  │    Parses guaranteed JSON response                               │
+  │    Applies confidence gate (< 65 → WAIT)                         │
+  │    Applies risk gate (EXTREME → WAIT)                            │
+  └──────────────────────────────────────────────────────────────────┘
+                              ↓
+  LAYER 4 — ORDER EXECUTION
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  core/risk_manager.py                                            │
+  │    Final pre-trade check: daily loss, open positions,            │
+  │    daily trades, consecutive losses, account balance             │
+  │    ATR-based position sizing                                     │
+  │                                                                  │
+  │  core/executor.py                                                │
+  │    PAPER mode: simulate fill at current price instantly          │
+  │    LIVE mode:  place market order on MEXC via ccxt REST          │
+  │    Monitor SL/TP on every price tick (check_exits)               │
+  └──────────────────────────────────────────────────────────────────┘
+                              ↓
+  LAYER 5 — PORTFOLIO & P&L TRACKING
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  core/portfolio.py                                               │
+  │    Per-trade: gross P&L, entry fee, exit fee, net P&L, outcome   │
+  │    Running: capital, total P&L, daily P&L, total fees paid       │
+  │    Progress toward $500 target (%)                               │
+  │    Circuit breakers: consecutive losses, daily loss, balance     │
+  │    Persistence: every closed trade → SQLite (data/trades.db)     │
+  │    Logs: console + logs/bot.log (10MB rotation, 7 day retention) │
+  └──────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 17 — TRADE DECISION FLOW (EVERY 1-MINUTE CANDLE)
+════════════════════════════════════════════════════════════════════════════════
+
+  New 1-min candle closes
+          │
+          ▼
+  Calculate all 7 indicators (pandas-ta)
+  Calculate OBI + CVD + spread (microstructure)
+          │
+          ▼
+  Confluence score >= 4 out of 7?
+          │
+    NO  ──┤  → Skip. Log: "confluence X/7 < 4". Wait for next candle.
+          │    (No API call = no cost)
+    YES   │
+          ▼
+  Hard gates pass?
+  (spread <= 5bps, ATR not elevated, not halted)
+          │
+    NO  ──┤  → Block. Log reason.
+          │
+    YES   │
+          ▼
+  Risk limits OK?
+  (daily loss, open positions, daily trades, consecutive losses)
+          │
+    NO  ──┤  → Block. Log reason.
+          │
+    YES   │
+          ▼
+  Call Claude AI (25+ data points as context)
+          │
+          ▼
+  Parse JSON response (tool_use = guaranteed schema)
+          │
+          ▼
+  confidence >= 65 AND risk != EXTREME?
+          │
+    NO  ──┤  → WAIT. Log: confidence/risk reason.
+          │
+    YES   │
+          ▼
+  Calculate position size (1.5% capital risk, ATR stop)
+  Set stop loss (1.2 × ATR from entry, max 0.50%)
+  Set take profit (min 0.20% net after 0.04% fee)
+          │
+          ▼
+  Place order (PAPER: simulate / LIVE: ccxt market order)
+  Log to SQLite database
+          │
+          ▼
+  Every price tick → check_exits(symbol, price)
+  If price hits stop loss  → close position, log "stop_loss"
+  If price hits take profit → close position, log "take_profit"
+          │
+          ▼
+  Update portfolio:
+  - capital (net P&L added)
+  - total_pnl (progress toward $500)
+  - fees_paid (0.020% × notional × 2 sides)
+  - consecutive_losses counter
+  - daily_pnl / daily_loss
+          │
+          ▼
+  Check circuit breakers:
+  - 5 consecutive losses   → halt bot
+  - daily loss >= 3%       → halt bot
+  - balance < 70% of start → halt bot
+          │
+          ▼
+  Log status every 5 min:
+  P&L | capital | win rate | fees | target progress %
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 18 — KEY NUMBERS AT A GLANCE
+════════════════════════════════════════════════════════════════════════════════
+
+  FEES
+  ──────────────────────────────────────────────────────────────────
+  MEXC Futures maker fee:          0.000% (limit orders)
+  MEXC Futures taker fee:          0.020% (market orders)
+  With 500+ MX token discount:     0.016% taker
+  Round-trip (both taker):         0.040%
+  Round-trip (+ slippage buffer):  0.050%
+  Breakeven move:                  0.040%
+  Minimum net profit target:       0.200% (5x the fee)
+
+  PROFIT TARGET MATH
+  ──────────────────────────────────────────────────────────────────
+  Capital $500 × 10x leverage = $5,000 notional per trade
+  Target per trade:     $5,000 × 0.20% = $10.00 gross
+  Fee per round-trip:   $5,000 × 0.04% = $2.00
+  Net per trade:        $8.00 per winning trade
+
+  At 65% win rate, 1:1.5 R:R:
+  EV per trade = (0.65 × $8.00) - (0.35 × $5.33) = $5.20 - $1.87 = $3.33
+  Trades to $500 target = $500 / $3.33 ≈ 150 trades
+  At 5 trades/day = ~30 trading days
+
+  SIGNAL THRESHOLDS
+  ──────────────────────────────────────────────────────────────────
+  Min confluence score:            4 / 7 signals
+  Min AI confidence:               65 / 100
+  Max bid-ask spread:              5 basis points
+  RSI oversold threshold:          35
+  RSI overbought threshold:        65
+  OBI threshold:                   ±0.40
+  Volume ratio minimum:            1.2× 20-period average
+  VWAP deviation minimum:          ±0.10%
+
+  RISK LIMITS
+  ──────────────────────────────────────────────────────────────────
+  Risk per trade:                  1.5% of capital
+  Max leverage:                    10×
+  Max stop loss:                   0.50% from entry
+  ATR stop multiplier:             1.2× ATR
+  Daily loss limit:                3.0% of capital
+  Max consecutive losses:          5
+  Max open positions:              2 simultaneously
+  Max daily trades:                30
+  Min account balance:             70% of starting capital
+
+  BOT PERFORMANCE TARGETS
+  ──────────────────────────────────────────────────────────────────
+  Win rate target:                 65-70%
+  Avg net win:                     >= 0.20% per trade
+  Avg loss:                        <= 0.20% per trade
+  Profit factor target:            >= 1.5
+  Max daily drawdown:              < 3%
+  Sharpe ratio target:             > 1.5
+  Claude API calls per day:        ~50-100
+
+
+════════════════════════════════════════════════════════════════════════════════
+SECTION 19 — PRIORITY TIERS FOR IMPLEMENTATION
+════════════════════════════════════════════════════════════════════════════════
+
+  TIER 1 — ALREADY BUILT (current bot)
+  ──────────────────────────────────────
+  RSI, EMA, BB, MACD, ATR, VWAP, Stochastic
+  OBI, CVD, Bid-Ask Spread
+  Funding Rate, Fear & Greed Index
+  Daily loss limit, consecutive loss circuit breaker
+  ATR position sizing, portfolio P&L tracker
+  Paper trading + live trading modes
+  SQLite trade persistence
+
+  TIER 2 — ADD NEXT (high impact, mostly free)
+  ───────────────────────────────────────────────
+  Open Interest + OI change rate       → MEXC REST API (ccxt)
+  Long/Short Ratio                      → MEXC REST API (ccxt)
+  Liquidation levels/heatmap            → CoinGlass API (free tier)
+  Previous Day High/Low (PDH/PDL)       → derive from candle history
+  Volume Profile POC                    → derive from candle history
+  Market Structure Breaks (BOS/CHoCH)  → smartmoneyconcepts library
+  Fair Value Gaps (FVG)                 → smartmoneyconcepts library
+  BTC Dominance filter                  → CoinMarketCap API (free)
+  Mark Price vs Index divergence        → MEXC WebSocket
+  5-min HTF alignment                   → second ccxt.pro stream
+  MFI (Money Flow Index)                → pandas-ta (already imported)
+  Liquidation event stream              → MEXC WebSocket
+
+  TIER 3 — SCALE-UP ADDITIONS (medium impact)
+  ─────────────────────────────────────────────
+  CryptoPanic news sentiment            → cryptopanic.com free API
+  Token unlock schedule                 → token.unlocks.app RSS
+  Options Put/Call ratio (Deribit)      → deribit.com API (BTC/ETH)
+  CME Basis tracking                    → CME Group data
+  BTC ETF daily flows                   → SoSoValue.com (free)
+  Economic calendar events              → investing.com RSS
+  Keltner Channel + BB squeeze combo    → pandas-ta (already imported)
+  CFGI.io token sentiment               → cfgi.io API
+
+  TIER 4 — NICE TO HAVE (diminishing returns for scalping)
+  ──────────────────────────────────────────────────────────
+  On-chain NUPL, SOPR                   → Glassnode (paid)
+  DXY correlation live                  → yfinance library
+  NASDAQ correlation                    → yfinance library
+  Google Trends                         → pytrends library
+  GEX (Gamma Exposure)                  → GammaFlip.io (free)
+  Santiment social metrics              → santiment.net (paid)
+  LunarCrush per-token sentiment        → lunarcrush.com (freemium)
+  Footprint/cluster charts              → custom tick aggregation
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
