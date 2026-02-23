@@ -82,6 +82,7 @@ def _smc_decide(
 
     price  = ind.get("price", 0.0)
     atr    = ind.get("atr",   0.0)
+    rsi    = ind.get("rsi",   50.0)
     spread = micro.get("spread_bps", 999.0)
 
     if price <= 0:
@@ -174,14 +175,17 @@ def _smc_decide(
     # DIRECTION DECISION
     # =========================================================================
 
-    # A valid POI must exist in the direction of bias
-    long_poi  = active_bull_ob or active_bull_fvg
-    short_poi = active_bear_ob or active_bear_fvg
+    # RSI extreme conditions — acts as a standalone reversal POI
+    rsi_long_poi  = rsi <= 30   # deeply oversold  → bullish reversal entry
+    rsi_short_poi = rsi >= 70   # deeply overbought → bearish reversal entry
 
-    # Zone filter: prefer discount for longs, premium for shorts, but allow
-    # equilibrium entries when OB/FVG confluence is present (zone affects scoring, not gate)
-    can_long  = (bias == "bullish") and bool(long_poi)  and not long_blocked
-    can_short = (bias == "bearish") and bool(short_poi) and not short_blocked
+    # A valid POI must exist in the direction of bias (OB, FVG, or RSI extreme)
+    long_poi  = active_bull_ob or active_bull_fvg or rsi_long_poi
+    short_poi = active_bear_ob or active_bear_fvg or rsi_short_poi
+
+    # RSI extremes allow counter-trend entries (RSI=25 overrides bearish structure for longs)
+    can_long  = (bias == "bullish" or rsi_long_poi)  and bool(long_poi) and not long_blocked
+    can_short = (bias == "bearish" or rsi_short_poi) and bool(short_poi) and not short_blocked
 
     if not can_long and not can_short:
         detail_parts = []
@@ -197,11 +201,23 @@ def _smc_decide(
 
     direction = "long" if can_long else "short"
 
+    # Flag whether this is an RSI-extreme entry (possibly counter-trend)
+    rsi_extreme_entry = (
+        (direction == "long"  and rsi <= 30) or
+        (direction == "short" and rsi >= 70)
+    )
+    counter_trend = (
+        (direction == "long"  and bias != "bullish") or
+        (direction == "short" and bias != "bearish")
+    )
+
     # =========================================================================
     # CONFIDENCE SCORING  (0 – 100)
     # =========================================================================
 
-    confidence = 0.0
+    # RSI-driven counter-trend entries start with a 40-point base so the
+    # reversal signal can overcome structural opposition penalties.
+    confidence = 40.0 if (rsi_extreme_entry and counter_trend) else 0.0
     bullish_f: list[str] = []
     bearish_f: list[str] = []
     factors   = bullish_f if direction == "long" else bearish_f
@@ -215,15 +231,33 @@ def _smc_decide(
         confidence += 12
         factors.append(f"HTF ranging — LTF {ltf_bias} bias only")
     else:
-        confidence -= 10
+        penalty = -4 if (rsi_extreme_entry and counter_trend) else -10
+        confidence += penalty
         counter_f.append(f"HTF {htf_bias} opposes {direction} — counter-trend risk")
 
     if ltf_bias == bias:
         confidence += 10
         factors.append(f"LTF {ltf_bias} structure aligned (5m)")
     elif ltf_bias != "ranging":
-        confidence -= 8
+        penalty = -3 if (rsi_extreme_entry and counter_trend) else -8
+        confidence += penalty
         counter_f.append(f"LTF structure ({ltf_bias}) diverges from bias")
+
+    # ── RSI extreme reversal signal (up to 25 pts) ───────────────────────────
+    if direction == "long" and rsi <= 30:
+        rsi_pts = 25 if rsi <= 25 else 15
+        confidence += rsi_pts
+        factors.append(f"RSI deeply oversold ({rsi:.1f}) — reversal bounce (+{rsi_pts}pts)")
+    elif direction == "short" and rsi >= 70:
+        rsi_pts = 25 if rsi >= 75 else 15
+        confidence += rsi_pts
+        factors.append(f"RSI deeply overbought ({rsi:.1f}) — reversal short (+{rsi_pts}pts)")
+    elif direction == "long" and rsi < 40:
+        confidence += 8
+        factors.append(f"RSI bearish ({rsi:.1f}) — approaching oversold, supports long")
+    elif direction == "short" and rsi > 60:
+        confidence += 8
+        factors.append(f"RSI bullish ({rsi:.1f}) — approaching overbought, supports short")
 
     # ── Order Block (up to 25 pts) ────────────────────────────────────────────
     active_ob = active_bull_ob if direction == "long" else active_bear_ob
@@ -263,8 +297,9 @@ def _smc_decide(
             + (" ✓ reversal confirmed" if relevant_sweep.reversal_confirmed else "")
         )
     else:
-        confidence -= 5
-        counter_f.append("No recent liquidity sweep — minor deduction")
+        if not rsi_extreme_entry:
+            confidence -= 5
+        counter_f.append("No recent liquidity sweep")
 
     # ── Premium / Discount zone (up to 15 pts) ────────────────────────────────
     if (direction == "long"  and zone_info.zone == "discount") or \
@@ -277,19 +312,24 @@ def _smc_decide(
         if zone_info.in_ote:
             confidence += 5
     elif zone_info.zone == "equilibrium":
-        confidence -= 10
-        counter_f.append("Price at equilibrium — blocked by zone filter (should not reach this)")
+        confidence -= 5
+        counter_f.append("Price at equilibrium — slight deduction")
 
     # ── Killzone timing (±15 pts) ─────────────────────────────────────────────
-    confidence += session.confidence_adjustment
+    # For RSI-extreme entries, cap the dead-zone penalty so strong reversal
+    # signals are not completely suppressed during low-liquidity hours.
+    kz_adj = session.confidence_adjustment
+    if rsi_extreme_entry and kz_adj < 0:
+        kz_adj = max(kz_adj, -8)
+    confidence += kz_adj
     if session.in_killzone:
         factors.append(
             f"In {session.session} killzone "
             f"({session.minutes_into_session}m elapsed) "
-            f"+{session.confidence_adjustment}pts"
+            f"+{kz_adj}pts"
         )
     else:
-        counter_f.append(f"Outside killzone ({session.session}) — reduced probability")
+        counter_f.append(f"Outside killzone ({session.session}) {kz_adj:+d}pts")
 
     # ── Microstructure confirmation (up to ±10 pts) ───────────────────────────
     obi       = micro.get("obi", 0.0)
@@ -351,7 +391,7 @@ def _smc_decide(
     confidence = max(0.0, min(100.0, round(confidence, 1)))
 
     # Count SMC confluence components for display (analogous to old 0-7 score)
-    smc_score = _count_smc_score(active_ob, active_fvg, relevant_sweep, zone_info, htf_bias, bias)
+    smc_score = _count_smc_score(active_ob, active_fvg, relevant_sweep, zone_info, htf_bias, bias, rsi)
 
     logger.debug(
         f"[SMC] {symbol} → {direction.upper()} | conf={confidence:.0f}% | "
@@ -547,16 +587,17 @@ def _resample_to_15m(candles_5m: pd.DataFrame) -> pd.DataFrame:
         return candles_5m
 
 
-def _count_smc_score(active_ob, active_fvg, sweep, zone_info, htf_bias, bias) -> int:
+def _count_smc_score(active_ob, active_fvg, sweep, zone_info, htf_bias, bias, rsi: float = 50.0) -> int:
     """
     Return a 0-7 score analogous to the old confluence score, for display purposes.
     """
     score = 0
-    if htf_bias == bias:     score += 1
-    if active_ob:            score += 2
-    if active_fvg:           score += 2
-    if sweep:                score += 1
+    if htf_bias == bias:                          score += 1
+    if active_ob:                                 score += 2
+    if active_fvg:                                score += 2
+    if sweep:                                     score += 1
     if zone_info.zone in ("discount", "premium"): score += 1
+    if rsi <= 30 or rsi >= 70:                    score = max(score, 2)  # RSI extreme = at least 2/7
     return min(score, 7)
 
 

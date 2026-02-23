@@ -83,6 +83,6 @@ def current_session(dt: datetime | None = None) -> SessionInfo:
     # Dead zone  (everything else)
     return SessionInfo(
         session="dead_zone", in_killzone=False,
-        confidence_adjustment=-15,
+        confidence_adjustment=-8,
         minutes_into_session=0,
     )

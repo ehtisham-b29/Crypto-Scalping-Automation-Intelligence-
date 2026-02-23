@@ -37,7 +37,7 @@ CANDLE_LIMIT: int = 200              # 200 × 5m = 16+ hours of history for indi
 # ── Signal thresholds ─────────────────────────────────────────────────────────
 MIN_CONFLUENCE_SCORE: int = int(os.getenv("MIN_CONFLUENCE_SCORE", "4"))
 # Renamed: MIN_AI_CONFIDENCE retained for backward compat with wizard + decision engine
-MIN_AI_CONFIDENCE: float = float(os.getenv("MIN_AI_CONFIDENCE", "58"))
+MIN_AI_CONFIDENCE: float = float(os.getenv("MIN_AI_CONFIDENCE", "45"))
 
 # ── Fees (MEXC Futures) ───────────────────────────────────────────────────────
 MAKER_FEE: float = 0.0000           # 0% — limit orders
@@ -75,7 +75,7 @@ VOLUME_RATIO_MIN: float = 1.2
 # Swing detection: bars each side needed to confirm a swing high/low
 SMC_SWING_N: int = 3
 # Order block lookback: how many candles to scan for OB formation
-SMC_OB_LOOKBACK: int = 50
+SMC_OB_LOOKBACK: int = 100
 # FVG minimum size as % of price (filters micro-noise gaps)
 SMC_FVG_MIN_SIZE_PCT: float = 0.03
 # FVG lookback: candles to scan for fair value gaps
