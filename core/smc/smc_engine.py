@@ -148,10 +148,10 @@ def _smc_decide(
     )
 
     recent_bull_sweep = next(
-        (s for s in sweeps if s.kind == "swept_buy_side"  and s.age <= 4), None
+        (s for s in sweeps if s.kind == "swept_buy_side"  and s.age <= 8), None
     )
     recent_bear_sweep = next(
-        (s for s in sweeps if s.kind == "swept_sell_side" and s.age <= 4), None
+        (s for s in sweeps if s.kind == "swept_sell_side" and s.age <= 8), None
     )
 
     # ── Step 5 — Premium / Discount ───────────────────────────────────────────
@@ -178,12 +178,10 @@ def _smc_decide(
     long_poi  = active_bull_ob or active_bull_fvg
     short_poi = active_bear_ob or active_bear_fvg
 
-    # Zone filter: only buy discount/equilibrium, only sell premium/equilibrium
-    long_zone_ok  = zone_info.zone in ("discount",  "equilibrium")
-    short_zone_ok = zone_info.zone in ("premium",   "equilibrium")
-
-    can_long  = (bias == "bullish") and bool(long_poi)  and long_zone_ok  and not long_blocked
-    can_short = (bias == "bearish") and bool(short_poi) and short_zone_ok and not short_blocked
+    # Zone filter: prefer discount for longs, premium for shorts, but allow
+    # equilibrium entries when OB/FVG confluence is present (zone affects scoring, not gate)
+    can_long  = (bias == "bullish") and bool(long_poi)  and not long_blocked
+    can_short = (bias == "bearish") and bool(short_poi) and not short_blocked
 
     if not can_long and not can_short:
         detail_parts = []
@@ -191,8 +189,6 @@ def _smc_decide(
             detail_parts.append("no OB or FVG at price")
         if bias == "ranging":
             detail_parts.append("structure ranging")
-        if zone_info.zone == "equilibrium" and (long_poi or short_poi):
-            detail_parts.append("price at equilibrium — weak zone edge")
         if long_blocked and bias == "bullish":
             detail_parts.append(f"funding {funding_rate:+.3f}% blocks longs")
         if short_blocked and bias == "bearish":
@@ -268,7 +264,7 @@ def _smc_decide(
         )
     else:
         confidence -= 5
-        counter_f.append("No recent liquidity sweep — lower conviction on reversal")
+        counter_f.append("No recent liquidity sweep — minor deduction")
 
     # ── Premium / Discount zone (up to 15 pts) ────────────────────────────────
     if (direction == "long"  and zone_info.zone == "discount") or \
@@ -281,8 +277,8 @@ def _smc_decide(
         if zone_info.in_ote:
             confidence += 5
     elif zone_info.zone == "equilibrium":
-        confidence -= 5
-        counter_f.append("Price at equilibrium — zone edge is weak")
+        confidence -= 10
+        counter_f.append("Price at equilibrium — blocked by zone filter (should not reach this)")
 
     # ── Killzone timing (±15 pts) ─────────────────────────────────────────────
     confidence += session.confidence_adjustment

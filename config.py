@@ -37,7 +37,7 @@ CANDLE_LIMIT: int = 200              # 200 × 5m = 16+ hours of history for indi
 # ── Signal thresholds ─────────────────────────────────────────────────────────
 MIN_CONFLUENCE_SCORE: int = int(os.getenv("MIN_CONFLUENCE_SCORE", "4"))
 # Renamed: MIN_AI_CONFIDENCE retained for backward compat with wizard + decision engine
-MIN_AI_CONFIDENCE: float = float(os.getenv("MIN_AI_CONFIDENCE", "65"))
+MIN_AI_CONFIDENCE: float = float(os.getenv("MIN_AI_CONFIDENCE", "58"))
 
 # ── Fees (MEXC Futures) ───────────────────────────────────────────────────────
 MAKER_FEE: float = 0.0000           # 0% — limit orders
@@ -83,7 +83,7 @@ SMC_FVG_LOOKBACK: int = 30
 # Liquidity cluster: price % range within which swing points are merged into one pool
 SMC_LIQUIDITY_CLUSTER_PCT: float = 0.03
 # Sweep lookback: how many recent candles to check for liquidity sweeps
-SMC_SWEEP_LOOKBACK: int = 6
+SMC_SWEEP_LOOKBACK: int = 15
 
 # ── External signals ──────────────────────────────────────────────────────────
 FEAR_GREED_URL: str = "https://api.alternative.me/fng/?limit=1"
