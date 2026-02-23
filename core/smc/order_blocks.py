@@ -52,7 +52,8 @@ def find_order_blocks(
     n       = len(candles)
     start   = max(0, n - lookback)
 
-    avg_vol = volumes[start:].mean() or 1.0
+    _mean = volumes[start:].mean()
+    avg_vol = _mean if (_mean == _mean and _mean > 0) else 1.0  # NaN-safe fallback
 
     bullish_obs: list[OrderBlock] = []
     bearish_obs: list[OrderBlock] = []
@@ -82,8 +83,8 @@ def find_order_blocks(
                             1 for k in range(ob_idx + 1, n)
                             if lows[k] <= ob_high and closes[k] >= ob_low
                         )
-                        vol_str  = min(volumes[ob_idx] / avg_vol, 3.0) / 3.0
-                        disp_str = min(displacement / 0.50, 1.0)
+                        vol_str  = _safe_strength(volumes[ob_idx] / avg_vol, 3.0) / 3.0
+                        disp_str = _safe_strength(displacement / 0.50, 1.0)
                         strength = round((vol_str + disp_str) / 2, 3)
                         bullish_obs.append(OrderBlock(
                             kind="bullish", high=ob_high, low=ob_low,
@@ -112,8 +113,8 @@ def find_order_blocks(
                             1 for k in range(ob_idx + 1, n)
                             if highs[k] >= ob_low and closes[k] <= ob_high
                         )
-                        vol_str  = min(volumes[ob_idx] / avg_vol, 3.0) / 3.0
-                        disp_str = min(displacement / 0.50, 1.0)
+                        vol_str  = _safe_strength(volumes[ob_idx] / avg_vol, 3.0) / 3.0
+                        disp_str = _safe_strength(displacement / 0.50, 1.0)
                         strength = round((vol_str + disp_str) / 2, 3)
                         bearish_obs.append(OrderBlock(
                             kind="bearish", high=ob_high, low=ob_low,
@@ -141,6 +142,19 @@ def price_in_ob(price: float, obs: list[OrderBlock]) -> OrderBlock | None:
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
+
+def _safe_strength(value: float, cap: float) -> float:
+    """Clamp value to [0, cap]; return 0.0 for NaN/Inf."""
+    if value != value or value != value:   # NaN check
+        return 0.0
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if v != v:   # second NaN guard post-conversion
+        return 0.0
+    return min(max(v, 0.0), cap)
+
 
 def _deduplicate(obs: list[OrderBlock]) -> list[OrderBlock]:
     """Merge OBs that overlap more than 50% of their range."""

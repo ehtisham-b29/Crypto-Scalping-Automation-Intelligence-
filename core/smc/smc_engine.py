@@ -232,7 +232,8 @@ def _smc_decide(
     # ── Order Block (up to 25 pts) ────────────────────────────────────────────
     active_ob = active_bull_ob if direction == "long" else active_bear_ob
     if active_ob:
-        ob_pts = int(15 + active_ob.strength * 10)   # 15 base + up to 10 for strong OB
+        _str = active_ob.strength if (active_ob.strength == active_ob.strength) else 0.0
+        ob_pts = int(15 + _str * 10)   # 15 base + up to 10 for strong OB
         ob_pts = min(ob_pts, 25)
         confidence += ob_pts
         factors.append(
