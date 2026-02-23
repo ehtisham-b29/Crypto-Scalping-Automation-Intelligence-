@@ -23,7 +23,7 @@ RISK_PER_TRADE_PCT: float = float(os.getenv("RISK_PER_TRADE_PCT", "1.5"))
 PROFIT_TARGET_USDT: float = float(os.getenv("PROFIT_TARGET_USDT", "500"))
 
 # ── Risk limits ───────────────────────────────────────────────────────────────
-DAILY_LOSS_LIMIT_PCT: float = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "3.0"))
+DAILY_LOSS_LIMIT_PCT: float = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "5.0"))
 MAX_CONSECUTIVE_LOSSES: int = 5
 MAX_DAILY_TRADES: int = 20           # fewer trades on 5m — each one is higher quality
 MAX_OPEN_POSITIONS: int = 2

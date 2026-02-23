@@ -80,10 +80,14 @@ def _smc_decide(
     if len(candles) < 30:
         return _wait("Insufficient candle data for SMC analysis")
 
-    price  = ind.get("price", 0.0)
-    atr    = ind.get("atr",   0.0)
-    rsi    = ind.get("rsi",   50.0)
-    spread = micro.get("spread_bps", 999.0)
+    price          = ind.get("price",          0.0)
+    atr            = ind.get("atr",            0.0)
+    rsi            = ind.get("rsi",            50.0)
+    rsi_prev       = ind.get("rsi_prev",       50.0)
+    macd_hist      = ind.get("macd_hist",      0.0)
+    macd_hist_prev = ind.get("macd_hist_prev", 0.0)
+    stoch_k        = ind.get("stoch_k",        50.0)
+    spread         = micro.get("spread_bps",   999.0)
 
     if price <= 0:
         return _wait("Invalid price data")
@@ -175,9 +179,23 @@ def _smc_decide(
     # DIRECTION DECISION
     # =========================================================================
 
-    # RSI extreme conditions — acts as a standalone reversal POI
-    rsi_long_poi  = rsi <= 30   # deeply oversold  → bullish reversal entry
-    rsi_short_poi = rsi >= 70   # deeply overbought → bearish reversal entry
+    # ── Reversal candle confirmation (prevents falling-knife entries) ────────
+    # Check the last CLOSED candle (index -2) and the one before it (index -3)
+    _c = candles["close"].values
+    _o = candles["open"].values
+    _l = candles["low"].values
+    _h = candles["high"].values
+    _last_bullish  = len(_c) >= 2 and _c[-2] > _o[-2]   # last closed candle green
+    _last_bearish  = len(_c) >= 2 and _c[-2] < _o[-2]   # last closed candle red
+    _higher_low    = len(_l) >= 3 and _l[-2] > _l[-3]   # price making higher low
+    _lower_high    = len(_h) >= 3 and _h[-2] < _h[-3]   # price making lower high
+    _rsi_turning_up   = rsi > rsi_prev + 0.3             # RSI slope positive
+    _rsi_turning_down = rsi < rsi_prev - 0.3             # RSI slope negative
+
+    # RSI extreme conditions — requires at least one reversal confirmation signal
+    # to prevent entering while price is still in freefall / still at peak
+    rsi_long_poi  = (rsi <= 30) and (_last_bullish or _higher_low or _rsi_turning_up)
+    rsi_short_poi = (rsi >= 70) and (_last_bearish or _lower_high or _rsi_turning_down)
 
     # A valid POI must exist in the direction of bias (OB, FVG, or RSI extreme)
     long_poi  = active_bull_ob or active_bull_fvg or rsi_long_poi
@@ -383,6 +401,41 @@ def _smc_decide(
         elif direction == "short" and fg <= 25:
             confidence -= 6
             counter_f.append(f"Extreme Fear ({fg}) — caution on shorts at this level")
+
+    # ── MACD momentum confirmation (±8 pts) ──────────────────────────────────
+    macd_turning_up   = macd_hist > macd_hist_prev and macd_hist > -0.001 * price
+    macd_turning_down = macd_hist < macd_hist_prev and macd_hist <  0.001 * price
+
+    if direction == "long":
+        if macd_turning_up:
+            confidence += 8
+            factors.append(f"MACD histogram turning up ({macd_hist:.4f}) — momentum confirming")
+        elif macd_hist < macd_hist_prev:
+            confidence -= 4
+            counter_f.append("MACD histogram still falling — momentum not confirmed")
+    else:
+        if macd_turning_down:
+            confidence += 8
+            factors.append(f"MACD histogram turning down ({macd_hist:.4f}) — momentum confirming")
+        elif macd_hist > macd_hist_prev:
+            confidence -= 4
+            counter_f.append("MACD histogram still rising — momentum not confirmed")
+
+    # ── Stochastic confirmation (±6 pts) ─────────────────────────────────────
+    if direction == "long":
+        if stoch_k <= 25:
+            confidence += 6
+            factors.append(f"Stochastic oversold ({stoch_k:.1f}) — supports long")
+        elif stoch_k >= 75:
+            confidence -= 4
+            counter_f.append(f"Stochastic overbought ({stoch_k:.1f}) — caution on long")
+    else:
+        if stoch_k >= 75:
+            confidence += 6
+            factors.append(f"Stochastic overbought ({stoch_k:.1f}) — supports short")
+        elif stoch_k <= 25:
+            confidence -= 4
+            counter_f.append(f"Stochastic oversold ({stoch_k:.1f}) — caution on short")
 
     # =========================================================================
     # THRESHOLD GATE

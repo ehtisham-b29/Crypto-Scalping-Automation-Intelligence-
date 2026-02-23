@@ -91,8 +91,9 @@ def calculate(df: pd.DataFrame) -> dict | None:
         df["vol_avg"]   = df["volume"].rolling(20).mean()
         df["vol_ratio"] = df["volume"] / df["vol_avg"].replace(0, 1e-10)
 
-        # ── Pull last row ──────────────────────────────────────────────────────
+        # ── Pull last row and previous closed row ──────────────────────────────
         last = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) >= 2 else last
 
         price = float(last["close"])
         vwap  = float(last["vwap"]) if pd.notna(last.get("vwap")) else price
@@ -105,6 +106,7 @@ def calculate(df: pd.DataFrame) -> dict | None:
         return {
             "price":          price,
             "rsi":            _safe(last, "rsi"),
+            "rsi_prev":       _safe(prev, "rsi"),          # RSI one candle ago
             "ema_fast":       _safe(last, "ema_fast"),
             "ema_slow":       _safe(last, "ema_slow"),
             "bb_upper":       _safe(last, "bb_upper"),
@@ -114,6 +116,7 @@ def calculate(df: pd.DataFrame) -> dict | None:
             "macd":           _safe(last, "macd"),
             "macd_signal":    _safe(last, "macd_signal"),
             "macd_hist":      _safe(last, "macd_hist"),
+            "macd_hist_prev": _safe(prev, "macd_hist"),    # MACD hist one candle ago
             "atr":            atr,
             "atr_avg":        atr_avg,
             "atr_elevated":   atr_elevated,

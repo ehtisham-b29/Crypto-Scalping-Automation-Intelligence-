@@ -215,8 +215,10 @@ class Portfolio:
     # ── Circuit breakers ──────────────────────────────────────────────────────
 
     def _check_circuit_breakers(self) -> None:
-        capital         = self.capital
-        daily_loss_limit = config.STARTING_CAPITAL * (config.DAILY_LOSS_LIMIT_PCT / 100)
+        capital          = self.capital
+        # Use current capital (not starting capital) so small accounts aren't
+        # halted after a single average loss
+        daily_loss_limit = capital * (config.DAILY_LOSS_LIMIT_PCT / 100)
 
         if self.consecutive_losses >= config.MAX_CONSECUTIVE_LOSSES:
             self.halted = True
@@ -224,10 +226,13 @@ class Portfolio:
                 f"CIRCUIT BREAKER: {self.consecutive_losses} consecutive losses — bot halted"
             )
         elif self.daily_loss >= daily_loss_limit:
-            self.halted = True
+            # Auto-reset after hitting daily loss: reduce position size next session
+            # rather than halting permanently on small accounts
             logger.warning(
-                f"CIRCUIT BREAKER: Daily loss ${self.daily_loss:.2f} >= limit ${daily_loss_limit:.2f}"
+                f"CIRCUIT BREAKER: Daily loss ${self.daily_loss:.2f} >= limit "
+                f"${daily_loss_limit:.2f} — pausing until daily reset"
             )
+            self.halted = True
         elif capital < config.STARTING_CAPITAL * 0.70:
             self.halted = True
             logger.warning(

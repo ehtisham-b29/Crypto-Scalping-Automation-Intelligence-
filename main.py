@@ -104,6 +104,10 @@ class ScalpingBot:
             await asyncio.sleep(3)
 
             if self.portfolio.halted:
+                # Clear stale signals so display doesn't show TRADEABLE while halted
+                for _s in self.data_feed.all_states():
+                    _s.cached_tradeable = False
+                    _s.cached_dir = "neutral"
                 continue
 
             if self.portfolio.state().get("target_reached"):
