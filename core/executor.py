@@ -145,7 +145,10 @@ class Executor:
     async def check_exits(self, symbol: str, current_price: float) -> None:
         """
         Called every time a new price arrives for a symbol.
-        Checks open positions for that symbol against their SL/TP levels.
+        Checks open positions for SL/TP and applies breakeven stop logic.
+        Breakeven: once price reaches 50% of the TP target, the stop loss
+        is moved to entry price + small buffer — turning potential losses
+        into worst-case breakeven trades.
         """
         to_close = []
         for pos_id, pos in self.portfolio.open_positions.items():
@@ -153,11 +156,35 @@ class Executor:
                 continue
 
             if pos.direction == "long":
+                tp_distance = pos.take_profit - pos.entry_price
+                if tp_distance > 0:
+                    tp_progress = (current_price - pos.entry_price) / tp_distance
+                    # Move SL to breakeven once 50% of TP is reached
+                    breakeven_sl = pos.entry_price * 1.0001
+                    if tp_progress >= 0.50 and pos.stop_loss < breakeven_sl:
+                        pos.stop_loss = breakeven_sl
+                        logger.info(
+                            f"[BREAKEVEN] {symbol} LONG SL moved to {breakeven_sl:.4f} "
+                            f"({tp_progress:.0%} of TP reached)"
+                        )
+
                 if current_price <= pos.stop_loss:
                     to_close.append((pos_id, "stop_loss"))
                 elif current_price >= pos.take_profit:
                     to_close.append((pos_id, "take_profit"))
+
             else:  # short
+                tp_distance = pos.entry_price - pos.take_profit
+                if tp_distance > 0:
+                    tp_progress = (pos.entry_price - current_price) / tp_distance
+                    breakeven_sl = pos.entry_price * 0.9999
+                    if tp_progress >= 0.50 and pos.stop_loss > breakeven_sl:
+                        pos.stop_loss = breakeven_sl
+                        logger.info(
+                            f"[BREAKEVEN] {symbol} SHORT SL moved to {breakeven_sl:.4f} "
+                            f"({tp_progress:.0%} of TP reached)"
+                        )
+
                 if current_price >= pos.stop_loss:
                     to_close.append((pos_id, "stop_loss"))
                 elif current_price <= pos.take_profit:

@@ -107,6 +107,8 @@ def calculate(df: pd.DataFrame) -> dict | None:
             "price":          price,
             "rsi":            _safe(last, "rsi"),
             "rsi_prev":       _safe(prev, "rsi"),          # RSI one candle ago
+            "ema_fast_prev":  _safe(prev, "ema_fast"),     # EMA fast one candle ago
+            "ema_slow_prev":  _safe(prev, "ema_slow"),     # EMA slow one candle ago
             "ema_fast":       _safe(last, "ema_fast"),
             "ema_slow":       _safe(last, "ema_slow"),
             "bb_upper":       _safe(last, "bb_upper"),

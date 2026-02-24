@@ -87,7 +87,25 @@ def _smc_decide(
     macd_hist      = ind.get("macd_hist",      0.0)
     macd_hist_prev = ind.get("macd_hist_prev", 0.0)
     stoch_k        = ind.get("stoch_k",        50.0)
+    ema_fast       = ind.get("ema_fast",       price)
+    ema_slow       = ind.get("ema_slow",       price)
+    ema_fast_prev  = ind.get("ema_fast_prev",  ema_fast)
+    ema_slow_prev  = ind.get("ema_slow_prev",  ema_slow)
+    bb_upper       = ind.get("bb_upper",       price * 1.02)
+    bb_lower       = ind.get("bb_lower",       price * 0.98)
+    vwap_dev       = ind.get("vwap_deviation", 0.0)
+    vol_ratio      = ind.get("vol_ratio",      1.0)
     spread         = micro.get("spread_bps",   999.0)
+
+    # ── Technical signal pre-computation ─────────────────────────────────────
+    _ema_bull_trend  = ema_fast > ema_slow
+    _ema_bear_trend  = ema_fast < ema_slow
+    _ema_bull_cross  = (ema_fast_prev <= ema_slow_prev) and (ema_fast > ema_slow)
+    _ema_bear_cross  = (ema_fast_prev >= ema_slow_prev) and (ema_fast < ema_slow)
+    _bb_long_poi     = price <= bb_lower * 1.002   # price at/below lower Bollinger Band
+    _bb_short_poi    = price >= bb_upper * 0.998   # price at/above upper Bollinger Band
+    _vwap_long_poi   = vwap_dev <= -0.25           # price 0.25%+ below VWAP
+    _vwap_short_poi  = vwap_dev >=  0.25           # price 0.25%+ above VWAP
 
     if price <= 0:
         return _wait("Invalid price data")
@@ -115,10 +133,19 @@ def _smc_decide(
     ltf_bias = ltf_ms.bias
 
     if htf_bias == "ranging" and ltf_bias == "ranging":
-        return _wait("Both HTF and LTF ranging — no structural edge")
+        # In pure ranging conditions allow Bollinger Band bounce + VWAP reversion entries
+        if _bb_long_poi and (_vwap_long_poi or rsi < 45):
+            bias = "bullish"   # range bottom long
+        elif _bb_short_poi and (_vwap_short_poi or rsi > 55):
+            bias = "bearish"   # range top short
+        else:
+            return _wait("Both HTF and LTF ranging — no BB/VWAP extreme for range trade")
 
     # Primary bias = HTF; fall back to LTF only when HTF is ranging
-    bias = htf_bias if htf_bias != "ranging" else ltf_bias
+    elif htf_bias == "ranging":
+        bias = ltf_bias
+    else:
+        bias = htf_bias
 
     # ── Step 2 — Order Blocks ─────────────────────────────────────────────────
     all_sh = (htf_ms.swing_highs or []) + (ltf_ms.swing_highs or [])
@@ -197,13 +224,15 @@ def _smc_decide(
     rsi_long_poi  = (rsi <= 30) and (_last_bullish or _higher_low or _rsi_turning_up)
     rsi_short_poi = (rsi >= 70) and (_last_bearish or _lower_high or _rsi_turning_down)
 
-    # A valid POI must exist in the direction of bias (OB, FVG, or RSI extreme)
-    long_poi  = active_bull_ob or active_bull_fvg or rsi_long_poi
-    short_poi = active_bear_ob or active_bear_fvg or rsi_short_poi
+    # A valid POI must exist — OB/FVG (SMC), RSI extreme, BB touch, or VWAP deviation
+    long_poi  = active_bull_ob or active_bull_fvg or rsi_long_poi or _bb_long_poi  or _vwap_long_poi
+    short_poi = active_bear_ob or active_bear_fvg or rsi_short_poi or _bb_short_poi or _vwap_short_poi
 
-    # RSI extremes allow counter-trend entries (RSI=25 overrides bearish structure for longs)
-    can_long  = (bias == "bullish" or rsi_long_poi)  and bool(long_poi) and not long_blocked
-    can_short = (bias == "bearish" or rsi_short_poi) and bool(short_poi) and not short_blocked
+    # Direction: RSI extreme allows counter-trend; EMA crossover allows trend-following entries
+    _ema_long_ok  = _ema_bull_cross or (_ema_bull_trend and bias == "bullish")
+    _ema_short_ok = _ema_bear_cross or (_ema_bear_trend and bias == "bearish")
+    can_long  = (bias == "bullish" or rsi_long_poi or _ema_long_ok)  and bool(long_poi) and not long_blocked
+    can_short = (bias == "bearish" or rsi_short_poi or _ema_short_ok) and bool(short_poi) and not short_blocked
 
     if not can_long and not can_short:
         detail_parts = []
@@ -436,6 +465,77 @@ def _smc_decide(
         elif stoch_k <= 25:
             confidence -= 4
             counter_f.append(f"Stochastic oversold ({stoch_k:.1f}) — caution on short")
+
+    # ── EMA trend alignment (up to 10 pts) ───────────────────────────────────
+    if direction == "long":
+        if _ema_bull_trend:
+            confidence += 7
+            factors.append(f"EMA bullish trend (fast={ema_fast:.4f} > slow={ema_slow:.4f})")
+            if _ema_bull_cross:
+                confidence += 3
+                factors.append("EMA bullish crossover — fresh momentum signal")
+        elif _ema_bear_trend:
+            confidence -= 5
+            counter_f.append("EMA bearish — trading against EMA trend")
+    else:
+        if _ema_bear_trend:
+            confidence += 7
+            factors.append(f"EMA bearish trend (fast={ema_fast:.4f} < slow={ema_slow:.4f})")
+            if _ema_bear_cross:
+                confidence += 3
+                factors.append("EMA bearish crossover — fresh momentum signal")
+        elif _ema_bull_trend:
+            confidence -= 5
+            counter_f.append("EMA bullish — trading against EMA trend")
+
+    # ── VWAP deviation (up to 8 pts) ─────────────────────────────────────────
+    if direction == "long":
+        if vwap_dev <= -0.3:
+            confidence += 8
+            factors.append(f"Price {abs(vwap_dev):.2f}% below VWAP — mean reversion long")
+        elif vwap_dev <= 0:
+            confidence += 3
+            factors.append(f"Price below VWAP — slight discount")
+        elif vwap_dev >= 0.5:
+            confidence -= 4
+            counter_f.append(f"Price {vwap_dev:.2f}% above VWAP — stretched for long entry")
+    else:
+        if vwap_dev >= 0.3:
+            confidence += 8
+            factors.append(f"Price {vwap_dev:.2f}% above VWAP — mean reversion short")
+        elif vwap_dev >= 0:
+            confidence += 3
+            factors.append(f"Price above VWAP — slight premium")
+        elif vwap_dev <= -0.5:
+            confidence -= 4
+            counter_f.append(f"Price {abs(vwap_dev):.2f}% below VWAP — stretched for short entry")
+
+    # ── Volume confirmation (up to 6 pts) ────────────────────────────────────
+    if vol_ratio >= 2.0:
+        confidence += 6
+        factors.append(f"High volume ({vol_ratio:.1f}x avg) — institutional interest")
+    elif vol_ratio >= 1.4:
+        confidence += 3
+        factors.append(f"Above-average volume ({vol_ratio:.1f}x avg)")
+    elif vol_ratio < 0.6:
+        confidence -= 3
+        counter_f.append(f"Low volume ({vol_ratio:.1f}x avg) — weak conviction")
+
+    # ── Bollinger Band position (up to 8 pts) ────────────────────────────────
+    if direction == "long":
+        if _bb_long_poi:
+            confidence += 8
+            factors.append(f"Price at/below lower Bollinger Band — statistical oversold")
+        elif price < ind.get("bb_mid", price):
+            confidence += 3
+            factors.append("Price below BB midline — in lower half of range")
+    else:
+        if _bb_short_poi:
+            confidence += 8
+            factors.append(f"Price at/above upper Bollinger Band — statistical overbought")
+        elif price > ind.get("bb_mid", price):
+            confidence += 3
+            factors.append("Price above BB midline — in upper half of range")
 
     # =========================================================================
     # THRESHOLD GATE
